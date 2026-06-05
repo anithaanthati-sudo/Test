@@ -107,11 +107,11 @@ jobs:
         uses: aws/setup-kubectl@v4
        
       - name: update kubeconfig
-        uses: aws-actions/eks-update-kubeconfig@v1
+       
         run: |
           aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
 
       - name: deploy to EKS cluster
-        uses: aws-actions/eks-kubectl@v1
+        
         run: |
           kubectl apply -f kubernetes/productcatalog-deploy.yaml
