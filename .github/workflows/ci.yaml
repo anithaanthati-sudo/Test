@@ -114,4 +114,4 @@ jobs:
       - name: deploy to EKS cluster
         
         run: |
-          kubectl apply -f kubernetes/productcatalog-deploy.yaml
+          kubectl apply -f kubernetes/productcatalog/deploy.yaml
