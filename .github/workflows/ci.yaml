@@ -112,11 +112,11 @@ jobs:
         uses: azure/setup-kubectl@v4
        
       - name: update kubeconfig
-       
         run: |
           aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
 
-      - name: deploy to EKS cluster
-        
+      - name: deploy to EKS cluster        
         run: |
-          kubectl apply -f kubernetes/productcatalog/deploy.yaml
+          #kubectl apply -f kubernetes/productcatalog/deploy.yaml
+          kubectl apply -f kubernetes/serviceaccount.yaml
+          kubectl apply -f kubernetes/complete-deploy.yaml
