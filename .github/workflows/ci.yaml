@@ -82,11 +82,11 @@ jobs:
       - name: update tag in k8s manifest deployment of product catalog
         run: |
           sed -i "s|image: .*|image: ${{secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}|" kubernetes/productcatalog/deploy.yaml
-      - name: commit and push changes to Githud repository
+      - name: commit and push changes to Github repository
         run: |
           git config --global user.name "anithaanthati-sudo"
           git config --global user.email "anitha.anthati@gmail.com"
-          git add kubernetes/productcatalog-deploy.yaml
+          git add kubernetes/productcatalog/deploy.yaml
           git commit -m "Update product catalog image tag to ${{github.run_id}}"
           git push origin main
   deploy:
