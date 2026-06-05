@@ -17,14 +17,14 @@ jobs:
 
       - name: Build
         run: |
-        cd src/product-catalog
-        go mod download  
-        go build -o product-catalog main.go
+          cd src/product-catalog
+          go mod download  
+          go build -o product-catalog main.go
 
       - name: Run tests
         run: |
-        cd src/product-catalog
-        go test -v ./...
+          cd src/product-catalog
+          go test -v ./...
 
   code-quality:
     runs-on: ubuntu-latest
