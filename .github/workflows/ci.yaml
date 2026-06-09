@@ -1,108 +1,122 @@
-# CI for Product Catalog Service
-
-name: product-catalog-ci
-
-on: 
-    pull_request:
-        branches:
-        - main
-
+name: CI workflow for product catalog
+on:
+  push:
+    branches:
+      - main
 jobs:
-    build:
-        runs-on: ubuntu-latest
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        steps:
-        - name: checkout code
-          uses: actions/checkout@v4
+      - name: set up go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.22
 
-        - name: Setup Go 1.22
-          uses: actions/setup-go@v2
-          with:
-            go-version: 1.22
-        
-        - name: Build
-          run: |
-            cd src/product-catalog
-            go mod download
-            go build -o product-catalog-service main.go
+      - name: Build
+        run: |
+          cd src/product-catalog
+          go mod download  
+          go build -o product-catalog main.go
 
-        - name: unit tests
-          run: |
-            cd src/product-catalog
-            go test ./...
-    
-    code-quality:
-        runs-on: ubuntu-latest
+      - name: Run tests
+        run: |
+          cd src/product-catalog
+          go test -v ./...
 
-        steps:
-        - name: checkout code
-          uses: actions/checkout@v4
-        
-        - name: Setup Go 1.22
-          uses: actions/setup-go@v2
-          with:
-           go-version: 1.22
-        
-        - name: Run golangci-lint
-          uses: golangci/golangci-lint-action@v6
-          with:
-            version: v1.55.2
-            run: golangci-lint run
-            working-directory: src/product-catalog
+  code-quality:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: set up go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.22
 
-    docker:
-        runs-on: ubuntu-latest
+      - name: Run code quality checks lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.55.2
+          run: golangci-lint run
+          working-directory: src/product-catalog
+  
+  docker-build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    needs: build
 
-        needs: build
+    runs-on: ubuntu-latest
 
-        steps:
-        - name: checkout code
-          uses: actions/checkout@v4
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
 
-        - name: Install Docker
-          uses: docker/setup-buildx-action@v1
-        
-        - name: Login to Docker
-          uses: docker/login-action@v3
-          with:
-            username: ${{ secrets.DOCKER_USERNAME }}
-            password: ${{ secrets.DOCKER_TOKEN }}
+      - name: install docker
+        uses: docker/setup-buildx-action@v2
+      
+      - name: login into docker hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{secrets.DOCKER_USERNAME }}
+          password: ${{secrets.DOCKER_PASSWORD }}
+      
+      - name: build and push docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: src/product-catalog
+          file: src/product-catalog/Dockerfile
+          push: true
+          tags: ${{secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}
+  
+  update-K8s:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN}}
 
-        - name: Docker Push
-          uses: docker/build-push-action@v6
-          with:
-            context: src/product-catalog
-            file: src/product-catalog/Dockerfile
-            push: true
-            tags: ${{ secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}
+      - name: update tag in k8s manifest deployment of product catalog
+        run: |
+          sed -i "s|image: .*|image: ${{secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}|" kubernetes/productcatalog/deploy.yaml
+      - name: commit and push changes to Github repository
+        run: |
+          git config --global user.name "anithaanthati-sudo"
+          git config --global user.email "anitha.anthati@gmail.com"
+          git add kubernetes/productcatalog/deploy.yaml
+          git commit -m "[skip ci]Update product catalog image tag to ${{github.run_id}}"
+          git push origin main
+  deploy:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    needs: update-K8s
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
 
-    
-    updatek8s:
-        runs-on: ubuntu-latest
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}    
 
-        needs: docker
+      - name: install kubectl
+        uses: azure/setup-kubectl@v4
+       
+      - name: update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
 
-        steps:
-        - name: checkout code
-          uses: actions/checkout@v4
-          with:
-            token: ${{ secrets.GITHUB_TOKEN }}
-
-        - name: Update tag in kubernetes deployment manifest
-          run: | 
-               sed -i "s|image: .*|image: ${{ secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}|" kubernetes/productcatalog/deploy.yaml
-        
-        - name: Commit and push changes
-          run: |
-            git config --global user.email "abhishek@gmail.com"
-            git config --global user.name "Abhishek Veeramalla"
-            git add kubernetes/productcatalog/deploy.yaml
-            git commit -m "[CI]: Update product catalog image tag"
-            git push origin HEAD:main -f
-
-        
-        
-          
-
-
-        
+      - name: deploy to EKS cluster        
+        run: |
+          #kubectl apply -f kubernetes/productcatalog/deploy.yaml
+          kubectl apply -f kubernetes/serviceaccount.yaml
+          kubectl apply -f kubernetes/complete-deploy.yaml
